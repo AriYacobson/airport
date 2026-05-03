@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oligarch-postgres
+    environment:
+      POSTGRES_DB: oligarch
+      POSTGRES_USER: oligarch
+      POSTGRES_PASSWORD: oligarch
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oligarch -d oligarch"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  oligarch-rating:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: oligarch-rating:local
+    container_name: oligarch-rating
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8080
+      DATASOURCE_URL: jdbc:postgresql://postgres:5432/oligarch
+      DATASOURCE_USERNAME: oligarch
+      DATASOURCE_PASSWORD: oligarch
+      ASSETS_VALUATION_URL: ${ASSETS_VALUATION_URL:-http://assets-valuation-mock:8080}
+      OLIGARCH_HELPER_URL: ${OLIGARCH_HELPER_URL:-http://oligarch-helper-mock:8080}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    ports:
+      - "8080:8080"
+
+  # Optional WireMock containers that emulate the upstream services for local runs.
+  # Pre-baked stub mappings live under ./local/mocks/{service}/mappings.
+  assets-valuation-mock:
+    image: wiremock/wiremock:3.9.1
+    container_name: assets-valuation-mock
+    command: ["--port", "8080", "--global-response-templating"]
+    volumes:
+      - ./local/mocks/assets-valuation:/home/wiremock
+    ports:
+      - "9081:8080"
+
+  oligarch-helper-mock:
+    image: wiremock/wiremock:3.9.1
+    container_name: oligarch-helper-mock
+    command: ["--port", "8080", "--global-response-templating"]
+    volumes:
+      - ./local/mocks/oligarch-helper:/home/wiremock
+    ports:
+      - "9082:8080"
+
+volumes:
+  postgres-data:

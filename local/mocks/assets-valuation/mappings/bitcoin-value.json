@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/assets-valuation/bitcoin/value"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "valueUsd": 60000 }
+  }
+}

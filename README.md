@@ -1,47 +1,134 @@
-# Airport
+# oligarch-rating
 
-A terminal multiplexer built for AI coding CLIs. Run multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions side-by-side with live status previews, so you always know which session needs your attention.
+A production-grade Spring Boot 3 (Java 21) microservice that rates a person against the world oligarch threshold by orchestrating two upstream services and persisting confirmed oligarchs.
 
-## Quick Start
+## Architecture
 
-```bash
-npx airport-ai
+```
+client ─▶ POST /api/v1/oligarch-ratings
+            │
+            ▼
+   OligarchRatingController ─▶ OligarchRatingService
+                                  │
+              ┌───────────────────┼─────────────────────────┐
+              ▼                   ▼                         ▼
+   AssetsValuationClient   OligarchHelperClient        OligarchRepository
+     (cash/evaluate,         (oligarch-threshold)      (Postgres / H2)
+      bitcoin/value)
 ```
 
-## Install & Build from Source
+* **Layering** – controller / service / client / repository, with DTOs at the edges.
+* **Resilience** – Resilience4j retry on every upstream call.
+* **Observability** – Spring Boot Actuator with liveness/readiness probes and Prometheus metrics.
+* **Validation** – Bean Validation on the request payload, structured error responses.
+* **Documentation** – OpenAPI 3 spec at `/v3/api-docs`, Swagger UI at `/swagger-ui.html`.
+* **Persistence** – JPA. H2 in-memory by default, Postgres ready (used in `docker-compose`).
 
-Requires Node 20+ (see `.nvmrc`).
+## API
 
-```bash
-npm install --legacy-peer-deps
-npm start          # dev mode
-npm run make       # build distributable
+### `POST /api/v1/oligarch-ratings`
+
+Rates a person and, if their assets value exceeds the oligarch threshold, persists them.
+
+Request:
+```json
+{
+  "id": 123456789,
+  "personInformation": { "firstName": "Bill", "lastName": "Gates" },
+  "financialAssets": {
+    "cashAmount": 16000000000,
+    "currency": "ILS",
+    "bitcoinAmount": 50
+  }
+}
 ```
 
-## Keyboard Shortcuts
+Response (200):
+```json
+{
+  "id": 123456789,
+  "firstName": "Bill",
+  "lastName": "Gates",
+  "assetsValue": 4003000000.00,
+  "oligarch": true
+}
+```
 
-| Shortcut | Action |
-|---|---|
-| `Cmd+T` | New session |
-| `Cmd+W` | Close session |
-| `Cmd+1`–`Cmd+9` | Switch to session 1–9 |
-| `Cmd+[` / `Cmd+]` | Previous / next session |
-| `Cmd+Shift+[` / `Cmd+Shift+]` | Previous / next session (alt) |
-| `Cmd+J` | Jump to next waiting session |
-| `Cmd+K` | Clear terminal |
+Status codes:
+* `200 OK` – rating computed (oligarch flag indicates outcome).
+* `400 Bad Request` – validation / payload error (returns structured `ApiError`).
+* `502 Bad Gateway` – upstream service responded with an error.
+* `504 Gateway Timeout` – upstream service was unreachable.
 
-On Linux / Windows, substitute `Ctrl` for `Cmd`.
+`assetsValue = cashInUsd + bitcoinAmount * bitcoinValueInUsd`, computed via the upstream `assets-valuation` service. The threshold is fetched from `oligarch-helper`.
 
-## Claude Code Hooks
+## Running locally
 
-Airport ships two shell scripts in `hooks/` that let it show real-time Claude Code activity (e.g. "Reading `App.tsx`", "Running agent: fix tests") inside each session tile.
+### With Docker Compose (recommended)
 
-**Hooks are installed automatically** into `~/.claude/settings.json` when you run `npm start`. The setup is idempotent and won't overwrite your existing hooks.
+Spins up Postgres, two WireMock-backed upstream stubs, and the service:
 
-To remove them, delete the Airport entries from `~/.claude/settings.json` under the `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, and `Notification` events.
+```bash
+docker compose up --build
+```
 
-The hooks are no-ops outside Airport — they check for the `AIRPORT` environment variable and exit silently when it's absent.
+The service is on `http://localhost:8080`; Swagger UI on `http://localhost:8080/swagger-ui.html`.
 
-## License
+Try it:
+```bash
+curl -X POST http://localhost:8080/api/v1/oligarch-ratings \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": 123456789,
+    "personInformation": { "firstName": "Bill", "lastName": "Gates" },
+    "financialAssets": { "cashAmount": 16000000000, "currency": "ILS", "bitcoinAmount": 50 }
+  }'
+```
 
-[MIT](LICENSE)
+### Without Docker
+
+```bash
+mvn spring-boot:run
+```
+
+By default the service runs against H2 and points at `http://assets-valuation:8080` and `http://oligarch-helper:8080`. Override with env vars:
+
+```bash
+ASSETS_VALUATION_URL=http://localhost:9081 \
+OLIGARCH_HELPER_URL=http://localhost:9082 \
+mvn spring-boot:run
+```
+
+## Testing
+
+```bash
+mvn test
+```
+
+Three layers of tests are in place:
+
+| Layer | Location | Tooling |
+| --- | --- | --- |
+| **Unit** | `src/test/java/.../service/*Test.java` | JUnit 5 + Mockito (pure, no Spring context) |
+| **Component / slice** | `src/test/java/.../api/OligarchRatingControllerTest.java`, `src/test/java/.../client/*ClientTest.java`, `src/test/java/.../repository/OligarchRepositoryTest.java` | `@WebMvcTest`, `@DataJpaTest`, WireMock-backed clients |
+| **Integration** | `src/test/java/.../OligarchRatingIntegrationTest.java` | `@SpringBootTest` with `RANDOM_PORT`, WireMock upstreams, H2 persistence |
+
+## Configuration
+
+| Property | Env var | Default |
+| --- | --- | --- |
+| `server.port` | `SERVER_PORT` | `8080` |
+| `spring.datasource.url` | `DATASOURCE_URL` | embedded H2 |
+| `oligarch-rating.external.assets-valuation.base-url` | `ASSETS_VALUATION_URL` | `http://assets-valuation:8080` |
+| `oligarch-rating.external.oligarch-helper.base-url` | `OLIGARCH_HELPER_URL` | `http://oligarch-helper:8080` |
+
+Resilience4j retry settings live under `resilience4j.retry.instances.{assets-valuation,oligarch-helper}`.
+
+## Operational endpoints
+
+* `GET /actuator/health` – aggregated health
+* `GET /actuator/health/liveness` – liveness probe
+* `GET /actuator/health/readiness` – readiness probe
+* `GET /actuator/prometheus` – Prometheus metrics
+* `GET /v3/api-docs` – OpenAPI spec
+* `GET /swagger-ui.html` – Swagger UI

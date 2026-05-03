@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: oligarch-rating
+  datasource:
+    url: ${DATASOURCE_URL:jdbc:h2:mem:oligarch;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
+    username: ${DATASOURCE_USERNAME:sa}
+    password: ${DATASOURCE_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  error:
+    include-message: never
+    include-binding-errors: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+oligarch-rating:
+  external:
+    assets-valuation:
+      base-url: ${ASSETS_VALUATION_URL:http://assets-valuation:8080}
+      connect-timeout: 2s
+      read-timeout: 5s
+    oligarch-helper:
+      base-url: ${OLIGARCH_HELPER_URL:http://oligarch-helper:8080}
+      connect-timeout: 2s
+      read-timeout: 5s
+
+resilience4j:
+  retry:
+    instances:
+      assets-valuation:
+        max-attempts: 3
+        wait-duration: 200ms
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+      oligarch-helper:
+        max-attempts: 3
+        wait-duration: 200ms
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+
+logging:
+  level:
+    com.example.oligarchrating: INFO

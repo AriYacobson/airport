@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/oligarch-helper/oligarch-threshold"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "threshold": 1000000000 }
+  }
+}
