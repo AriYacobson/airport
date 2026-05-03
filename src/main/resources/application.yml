@@ -56,15 +56,33 @@ resilience4j:
         wait-duration: 200ms
         exponential-backoff-multiplier: 2
         retry-exceptions:
-          - org.springframework.web.client.ResourceAccessException
-          - org.springframework.web.client.HttpServerErrorException
+          - com.example.oligarchrating.exception.RetryableExternalServiceException
       oligarch-helper:
         max-attempts: 3
         wait-duration: 200ms
         exponential-backoff-multiplier: 2
         retry-exceptions:
-          - org.springframework.web.client.ResourceAccessException
-          - org.springframework.web.client.HttpServerErrorException
+          - com.example.oligarchrating.exception.RetryableExternalServiceException
+  circuitbreaker:
+    instances:
+      assets-valuation:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        record-exceptions:
+          - com.example.oligarchrating.exception.ExternalServiceException
+      oligarch-helper:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        record-exceptions:
+          - com.example.oligarchrating.exception.ExternalServiceException
 
 logging:
   level:

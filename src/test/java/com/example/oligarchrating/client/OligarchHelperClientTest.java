@@ -67,4 +67,16 @@ class OligarchHelperClientTest {
                 .isInstanceOf(ExternalServiceException.class)
                 .extracting("service").isEqualTo("oligarch-helper");
     }
+
+    @Test
+    void throwsWhenBodyMissingThreshold() {
+        wireMock.stubFor(get(urlPathEqualTo("/oligarch-helper/oligarch-threshold"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{}")));
+
+        assertThatThrownBy(() -> client.getOligarchThreshold())
+                .isInstanceOf(ExternalServiceException.class)
+                .extracting("service").isEqualTo("oligarch-helper");
+    }
 }

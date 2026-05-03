@@ -38,6 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 class OligarchRatingIntegrationTest {
 
+    // WireMock servers must be started in a static initializer (not @BeforeAll):
+    // Spring's @DynamicPropertySource is evaluated by SpringExtension before
+    // user-defined @BeforeAll methods run, so the ports must be known at class init.
     private static final WireMockServer assetsValuation;
     private static final WireMockServer oligarchHelper;
 

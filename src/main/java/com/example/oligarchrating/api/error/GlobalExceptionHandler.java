@@ -1,8 +1,10 @@
 package com.example.oligarchrating.api.error;
 
 import com.example.oligarchrating.exception.ExternalServiceException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -42,7 +44,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex,
                                                           HttpServletRequest request) {
-        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, List.of());
+        log.warn("Illegal argument", ex);
+        return build(HttpStatus.BAD_REQUEST, "Invalid request", request, List.of());
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLock(OptimisticLockingFailureException ex,
+                                                         HttpServletRequest request) {
+        log.warn("Optimistic lock failure", ex);
+        return build(HttpStatus.CONFLICT, "Concurrent update detected, please retry", request, List.of());
+    }
+
+    @ExceptionHandler(CallNotPermittedException.class)
+    public ResponseEntity<ApiError> handleCircuitBreakerOpen(CallNotPermittedException ex,
+                                                             HttpServletRequest request) {
+        String breaker = ex.getCausingCircuitBreakerName();
+        log.warn("Circuit breaker open for {}", breaker);
+        return build(HttpStatus.SERVICE_UNAVAILABLE, upstreamUnavailable(breaker), request, List.of());
     }
 
     @ExceptionHandler(ExternalServiceException.class)
@@ -52,10 +70,11 @@ public class GlobalExceptionHandler {
         HttpStatus status = ex.getCause() instanceof ResourceAccessException
                 ? HttpStatus.GATEWAY_TIMEOUT
                 : HttpStatus.BAD_GATEWAY;
-        return build(status,
-                "Upstream service '" + ex.getService() + "' is unavailable",
-                request,
-                List.of());
+        return build(status, upstreamUnavailable(ex.getService()), request, List.of());
+    }
+
+    private static String upstreamUnavailable(String service) {
+        return "Upstream service '" + service + "' is unavailable";
     }
 
     @ExceptionHandler(Exception.class)
